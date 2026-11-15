@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dev-menu-web
+  annotations:
+    alb.ingress.kubernetes.io/group.name: portfolio-production
+spec:
+  rules:
+    - host: www.example.invalid
+      http:
+        paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: dev-menu-web
+                port:
+                  name: http

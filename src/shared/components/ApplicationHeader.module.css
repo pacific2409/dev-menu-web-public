@@ -1,0 +1,95 @@
+.header {
+  position: relative;
+  z-index: 10;
+  border-bottom: 1px solid var(--color-border-soft);
+  background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+  backdrop-filter: blur(1rem);
+}
+
+.inner {
+  display: flex;
+  width: min(100% - 2rem, 72rem);
+  min-height: 4.75rem;
+  margin-inline: auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--color-text-strong);
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+}
+
+.brandMark {
+  display: grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  box-shadow: 0 0.5rem 1.4rem rgb(29 86 65 / 18%);
+}
+
+.navigationList {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  gap: 0.35rem;
+  list-style: none;
+}
+
+.navigationLink {
+  display: inline-flex;
+  min-height: 2.75rem;
+  padding-inline: 1rem;
+  align-items: center;
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  font-size: 0.93rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.navigationLink:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+.activeNavigationLink {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+}
+
+@media (max-width: 40rem) {
+  .inner {
+    width: min(100% - 1.25rem, 72rem);
+    padding-block: 0.75rem;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .navigationList {
+    flex-wrap: wrap;
+  }
+
+  .navigationLink {
+    min-height: 2.5rem;
+    padding-inline: 0.8rem;
+  }
+}

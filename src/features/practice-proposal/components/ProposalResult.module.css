@@ -1,0 +1,161 @@
+.result {
+  display: grid;
+  margin-top: clamp(3.5rem, 7vw, 6rem);
+  gap: 1.5rem;
+}
+
+.resultHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.resultHeader h2 {
+  margin: 0.15rem 0 0;
+  color: var(--color-text-strong);
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3.3rem);
+  line-height: 1.15;
+  letter-spacing: -0.045em;
+}
+
+.previousLabel {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.conditions {
+  padding: clamp(1.2rem, 4vw, 2rem);
+  border: 1px solid var(--color-border-soft);
+  border-radius: 1.25rem;
+  background: var(--color-surface);
+}
+
+.conditions h3 {
+  margin: 0 0 1rem;
+  color: var(--color-text-strong);
+  font-size: 1rem;
+}
+
+.conditionList {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.conditionList div {
+  min-width: 0;
+}
+
+.conditionList dt,
+.proposalDetails dt {
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+}
+
+.conditionList dd,
+.proposalDetails dd {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-strong);
+}
+
+.fullCondition {
+  grid-column: 1 / -1;
+}
+
+.proposalList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 1rem;
+  list-style: none;
+}
+
+.proposalCard {
+  position: relative;
+  padding: clamp(1.4rem, 4vw, 2.2rem);
+  overflow: hidden;
+  border: 1px solid var(--color-border-soft);
+  border-radius: 1.35rem;
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-soft);
+}
+
+.proposalCard::before {
+  position: absolute;
+  width: 7rem;
+  height: 7rem;
+  top: -4rem;
+  right: -2rem;
+  border-radius: 50%;
+  background: var(--color-accent-soft);
+  content: '';
+}
+
+.proposalNumber {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+}
+
+.proposalCard h3 {
+  position: relative;
+  margin: 0.25rem 0 1.25rem;
+  color: var(--color-text-strong);
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 3vw, 1.7rem);
+  line-height: 1.35;
+}
+
+.proposalDetails {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+}
+
+.proposalDetails dd,
+.preserveText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 48rem) {
+  .conditionList,
+  .proposalDetails {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .proposalDetails div:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 32rem) {
+  .resultHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .conditionList,
+  .proposalDetails {
+    grid-template-columns: 1fr;
+  }
+
+  .proposalDetails div:last-child {
+    grid-column: auto;
+  }
+}

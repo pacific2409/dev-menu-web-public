@@ -1,0 +1,102 @@
+.npm_job:
+  image:
+    name: node:24.22.2-bookworm-slim
+    pull_policy: if-not-present
+  tags:
+    - portfolio-web-ci
+  interruptible: true
+  cache:
+    key:
+      files:
+        - package-lock.json
+        - tools/openapi/package-lock.json
+    paths:
+      - .npm/
+      - .npm-openapi/
+    policy: pull-push
+  before_script:
+    - node --version
+    - npm --version
+
+.staging_delivery_job:
+  image:
+    name: public.ecr.aws/aws-cli/aws-cli:2.31.30
+    entrypoint: ['']
+    pull_policy: if-not-present
+  tags:
+    - portfolio-web-delivery
+  interruptible: false
+  variables:
+    ENVIRONMENT: staging
+    KUBECTL_VERSION: v1.37.2
+    KUBECTL_LINUX_ARM64_SHA256: fcc16f63186659d9722014b7e02d5fdd2d4e669cb8c0ab66365d7d3b8ba03509
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sts.amazonaws.com
+  before_script:
+    - gitlab/scripts/staging/bootstrap-kubectl.sh
+
+.staging_preflight_job:
+  extends: .staging_delivery_job
+  before_script:
+    - dnf install --assumeyes --setopt=install_weak_deps=False --setopt=timeout=30 --setopt=retries=2 diffutils >/dev/null
+    - command -v diff >/dev/null
+    - gitlab/scripts/staging/bootstrap-kubectl.sh
+
+.playwright_job:
+  image:
+    name: mcr.microsoft.com/playwright:v1.64.1-resolute
+    pull_policy: if-not-present
+  tags:
+    - portfolio-web-ci
+  interruptible: true
+  timeout: 30 minutes
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+    policy: pull-push
+  before_script:
+    - node --version
+    - npm --version
+    - npm ci --cache .npm --prefer-offline
+
+.production_resolver_job:
+  image:
+    name: public.ecr.aws/aws-cli/aws-cli:2.31.30
+    entrypoint: ['']
+    pull_policy: if-not-present
+  tags:
+    - portfolio-web-delivery
+  interruptible: false
+  before_script:
+    - dnf install --assumeyes --setopt=install_weak_deps=False --setopt=timeout=30 --setopt=retries=2 jq >/dev/null
+    - command -v curl >/dev/null
+    - command -v jq >/dev/null
+
+.production_delivery_job:
+  image:
+    name: public.ecr.aws/aws-cli/aws-cli:2.31.30
+    entrypoint: ['']
+    pull_policy: if-not-present
+  tags:
+    - portfolio-web-delivery
+  interruptible: false
+  variables:
+    ENVIRONMENT: production
+    KUBECTL_VERSION: v1.37.2
+    KUBECTL_LINUX_ARM64_SHA256: fcc16f63186659d9722014b7e02d5fdd2d4e669cb8c0ab66365d7d3b8ba03509
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sts.amazonaws.com
+  before_script:
+    - gitlab/scripts/production/bootstrap-kubectl.sh
+
+.production_preflight_job:
+  extends: .production_delivery_job
+  before_script:
+    - dnf install --assumeyes --setopt=install_weak_deps=False --setopt=timeout=30 --setopt=retries=2 diffutils >/dev/null
+    - command -v diff >/dev/null
+    - gitlab/scripts/production/bootstrap-kubectl.sh

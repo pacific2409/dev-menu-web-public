@@ -1,0 +1,12 @@
+.git
+.gitignore
+.gitlab-ci.yml
+.npm/
+coverage/
+deploy/
+dist/
+gitlab/
+node_modules/
+playwright-report/
+test-results/
+*.tsbuildinfo

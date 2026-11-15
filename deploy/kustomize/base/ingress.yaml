@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dev-menu-web
+  labels:
+    app.kubernetes.io/name: dev-menu-web
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: dev-menu
+  annotations:
+    alb.ingress.kubernetes.io/group.name: portfolio-non-production
+    alb.ingress.kubernetes.io/group.order: '20'
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/target-type: ip
+spec:
+  ingressClassName: alb
+  rules:
+    - host: runtime-host.invalid
+      http:
+        paths:
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: dev-menu-web
+                port:
+                  name: http

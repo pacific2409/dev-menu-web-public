@@ -1,0 +1,16 @@
+.application {
+  min-height: 100vh;
+}
+
+.main {
+  width: min(100% - 2rem, 72rem);
+  margin-inline: auto;
+  padding-block: clamp(2.5rem, 6vw, 5.5rem) 6rem;
+}
+
+@media (max-width: 40rem) {
+  .main {
+    width: min(100% - 1.25rem, 72rem);
+    padding-block: 2rem 4rem;
+  }
+}

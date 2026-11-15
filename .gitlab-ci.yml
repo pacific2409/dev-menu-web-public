@@ -1,0 +1,555 @@
+include:
+  - local: gitlab/.gitlab-common-ci.yml
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH =~ /^(feature|fix)\/.+$/ && $CI_OPEN_MERGE_REQUESTS == null'
+    - if: '$CI_COMMIT_BRANCH =~ /^develop\/.+$/'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^release\/.+$/'
+    - when: never
+
+.integration_pipeline_job:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^develop\/.+$/'
+
+.non_release_pipeline_job:
+  rules:
+    - if: '$CI_COMMIT_BRANCH =~ /^release\/.+$/'
+      when: never
+    - when: on_success
+
+.production_pipeline_job:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^release\/.+$/'
+
+stages:
+  - install
+  - static
+  - test
+  - build
+  - image
+  - scan
+  - push
+  - promote
+  - deploy
+  - verify
+
+install_dependencies:
+  extends:
+    - .npm_job
+    - .non_release_pipeline_job
+  stage: install
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm --prefix tools/openapi ci --cache "$CI_PROJECT_DIR/.npm-openapi" --prefer-offline
+  artifacts:
+    expire_in: 1 hour
+    paths:
+      - node_modules/
+      - tools/openapi/node_modules/
+
+static_check:
+  extends:
+    - .npm_job
+    - .non_release_pipeline_job
+  stage: static
+  needs:
+    - job: install_dependencies
+      artifacts: true
+  script:
+    - npm run static:check
+
+dependency_audit:
+  extends:
+    - .npm_job
+    - .non_release_pipeline_job
+  stage: test
+  timeout: 10 minutes
+  needs:
+    - job: install_dependencies
+      artifacts: true
+    - job: static_check
+      artifacts: false
+  script:
+    - npm audit --audit-level=high
+    - npm --prefix tools/openapi audit --audit-level=high
+
+unit_component_test:
+  extends:
+    - .npm_job
+    - .non_release_pipeline_job
+  stage: test
+  timeout: 15 minutes
+  needs:
+    - job: install_dependencies
+      artifacts: true
+    - job: static_check
+      artifacts: false
+  script:
+    - mkdir -p reports
+    - npm run test:coverage -- --run --reporter=default --reporter=junit --outputFile.junit=reports/junit.xml
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/junit.xml
+      - coverage/coverage-summary.json
+    reports:
+      junit: reports/junit.xml
+
+openapi_contract_check:
+  extends:
+    - .npm_job
+    - .non_release_pipeline_job
+  stage: test
+  timeout: 10 minutes
+  needs:
+    - job: install_dependencies
+      artifacts: true
+    - job: static_check
+      artifacts: false
+  script:
+    - cmp openapi/proposal-service.yaml openapi/baseline/proposal-service.yaml
+    - |
+      generated_snapshot="$(mktemp)"
+      trap 'rm -f "$generated_snapshot"' EXIT
+      cp src/generated/api/proposal-service.d.ts "$generated_snapshot"
+      npm run contract:generate
+      cmp "$generated_snapshot" src/generated/api/proposal-service.d.ts
+
+application_build:
+  extends:
+    - .npm_job
+    - .non_release_pipeline_job
+  stage: build
+  timeout: 10 minutes
+  needs:
+    - job: install_dependencies
+      artifacts: true
+    - job: unit_component_test
+      artifacts: false
+    - job: openapi_contract_check
+      artifacts: false
+    - job: dependency_audit
+      artifacts: false
+  script:
+    - npm run build
+    - gitlab/scripts/common/verify-build-artifact.sh
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - dist/
+
+image_build:
+  image:
+    name: docker:28.5.1-cli
+    pull_policy: always
+  services:
+    - name: docker:28.5.1-dind
+      alias: docker
+  stage: image
+  tags:
+    - saas-linux-small-amd64
+  needs:
+    - job: static_check
+      artifacts: false
+    - job: unit_component_test
+      artifacts: false
+    - job: openapi_contract_check
+      artifacts: false
+    - job: application_build
+      artifacts: false
+    - job: dependency_audit
+      artifacts: false
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: /certs
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_CERT_PATH: /certs/client
+  script:
+    - gitlab/scripts/common/build-image-artifact.sh
+  artifacts:
+    expire_in: 1 day
+    paths:
+      - artifacts/frontend-image.tar
+      - artifacts/frontend-image.tar.sha256
+      - artifacts/image.env
+      - artifacts/tools/crane
+    reports:
+      dotenv: artifacts/image.env
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^develop\/.+$/'
+
+image_trivy_scan:
+  image:
+    name: aquasec/trivy:0.76.2
+    entrypoint: ['']
+    pull_policy: if-not-present
+  stage: scan
+  tags:
+    - portfolio-web-ci
+  variables:
+    TRIVY_CACHE_DIR: .trivy-cache
+  cache:
+    key: trivy-db-v2
+    paths:
+      - .trivy-cache/
+    policy: pull-push
+    when: always
+  needs:
+    - job: image_build
+      artifacts: true
+  script:
+    - mkdir -p reports
+    - trivy image --timeout 20m --input artifacts/frontend-image.tar --severity HIGH,CRITICAL --exit-code 1 --format json --output reports/trivy.json
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/trivy.json
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^develop\/.+$/'
+
+image_dockle_scan:
+  image:
+    name: goodwithtech/dockle:v0.4.15
+    entrypoint: ['']
+    pull_policy: if-not-present
+  stage: scan
+  tags:
+    - portfolio-web-ci
+  needs:
+    - job: image_build
+      artifacts: true
+  script:
+    - mkdir -p reports
+    - dockle --input artifacts/frontend-image.tar --accept-key KEY_SHA512 --exit-code 1 --exit-level FATAL --format json --output reports/dockle.json
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/dockle.json
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^develop\/.+$/'
+
+ecr_push:
+  image:
+    name: public.ecr.aws/aws-cli/aws-cli:2.31.30
+    entrypoint: ['']
+    pull_policy: if-not-present
+  stage: push
+  tags:
+    - portfolio-web-delivery
+  needs:
+    - job: image_build
+      artifacts: true
+    - job: dependency_audit
+      artifacts: false
+    - job: image_trivy_scan
+      artifacts: false
+    - job: image_dockle_scan
+      artifacts: false
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: sts.amazonaws.com
+  script:
+    - gitlab/scripts/common/push-image-to-ecr.sh
+  artifacts:
+    expire_in: 7 days
+    paths:
+      - artifacts/ecr.env
+    reports:
+      dotenv: artifacts/ecr.env
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_BRANCH =~ /^develop\/.+$/'
+
+staging_preflight:
+  extends:
+    - .staging_preflight_job
+    - .integration_pipeline_job
+  stage: deploy
+  resource_group: staging
+  environment:
+    name: staging
+    action: prepare
+  needs:
+    - job: ecr_push
+      artifacts: true
+  script:
+    - gitlab/scripts/staging/preflight.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/staging-preflight.json
+
+staging_deploy:
+  extends:
+    - .staging_delivery_job
+    - .integration_pipeline_job
+  stage: deploy
+  resource_group: staging
+  environment:
+    name: staging
+    url: $PUBLIC_BASE_URL
+    action: start
+  needs:
+    - job: ecr_push
+      artifacts: true
+    - job: staging_preflight
+      artifacts: false
+  script:
+    - gitlab/scripts/staging/deploy.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/staging-deploy.json
+
+staging_runtime_verify:
+  extends:
+    - .staging_delivery_job
+    - .integration_pipeline_job
+  stage: verify
+  resource_group: staging
+  environment:
+    name: staging
+    action: verify
+  needs:
+    - job: ecr_push
+      artifacts: true
+    - job: staging_deploy
+      artifacts: false
+  script:
+    - gitlab/scripts/staging/runtime-verify.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/staging-runtime.json
+
+staging_controlled_integration:
+  extends:
+    - .playwright_job
+    - .integration_pipeline_job
+  stage: verify
+  resource_group: staging
+  environment:
+    name: staging
+    action: verify
+  needs:
+    - job: ecr_push
+      artifacts: true
+    - job: staging_runtime_verify
+      artifacts: false
+  script:
+    - npm run test:e2e -- tests/e2e/controlled tests/e2e/deployed/initial-ui.spec.ts tests/e2e/deployed/cross-cutting.spec.ts
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/playwright/results.json
+      - reports/playwright/junit.xml
+    reports:
+      junit: reports/playwright/junit.xml
+
+staging_real_integration:
+  extends:
+    - .playwright_job
+    - .integration_pipeline_job
+  stage: verify
+  resource_group: staging
+  environment:
+    name: staging
+    action: verify
+  needs:
+    - job: ecr_push
+      artifacts: true
+    - job: staging_controlled_integration
+      artifacts: false
+  # The approved Database fixture handoff supplies the gate and E2E_REAL_* inputs,
+  # including E2E_REAL_FIXTURE_TECHNOLOGY_NAME, when this manual job is played.
+  # Fixture values are intentionally not persisted in this repository or Project Variables.
+  variables:
+    INTEGRATION_TEST_MODE: real
+  script:
+    - export E2E_VALID_TECHNOLOGY_ID="${E2E_REAL_TECHNOLOGY_ID}"
+    - export E2E_VALID_HISTORY_ID="${E2E_REAL_HISTORY_ID}"
+    - npm run test:e2e -- tests/e2e/real tests/e2e/deployed/routing.spec.ts tests/e2e/deployed/navigation-parameters.spec.ts
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - reports/playwright/results.json
+      - reports/playwright/junit.xml
+    reports:
+      junit: reports/playwright/junit.xml
+  when: manual
+  allow_failure: false
+
+production_resolve_provenance:
+  extends:
+    - .production_resolver_job
+    - .production_pipeline_job
+  stage: promote
+  timeout: 10 minutes
+  resource_group: production
+  environment:
+    name: production
+    action: prepare
+  script:
+    - gitlab/scripts/production/resolve-provenance.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    access: maintainer
+    paths:
+      - artifacts/production/provenance.env
+      - artifacts/production/recovery-source/
+      - reports/production-provenance.json
+    reports:
+      dotenv: artifacts/production/provenance.env
+
+production_preflight:
+  extends:
+    - .production_preflight_job
+    - .production_pipeline_job
+  stage: deploy
+  timeout: 15 minutes
+  resource_group: production
+  environment:
+    name: production
+    action: prepare
+  needs:
+    - job: production_resolve_provenance
+      artifacts: true
+  script:
+    - gitlab/scripts/production/preflight.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    access: maintainer
+    paths:
+      - artifacts/production/preflight/reviewed-manifest.yaml
+      - artifacts/production/preflight/reviewed-manifest.yaml.sha256
+      - artifacts/production/recovery/
+      - reports/production-preflight.json
+  when: manual
+  allow_failure: false
+
+production_deploy:
+  extends:
+    - .production_delivery_job
+    - .production_pipeline_job
+  stage: deploy
+  timeout: 15 minutes
+  resource_group: production
+  environment:
+    name: production
+    url: $PUBLIC_BASE_URL
+    action: start
+  needs:
+    - job: production_resolve_provenance
+      artifacts: true
+    - job: production_preflight
+      artifacts: true
+  script:
+    - gitlab/scripts/production/deploy.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    access: maintainer
+    paths:
+      - reports/production-deploy.json
+  when: manual
+  allow_failure: false
+
+production_runtime_verify:
+  extends:
+    - .production_delivery_job
+    - .production_pipeline_job
+  stage: verify
+  timeout: 15 minutes
+  resource_group: production
+  environment:
+    name: production
+    action: verify
+  needs:
+    - job: production_resolve_provenance
+      artifacts: true
+    - job: production_deploy
+      artifacts: false
+    - job: production_preflight
+      artifacts: true
+  script:
+    - gitlab/scripts/production/runtime-verify.sh
+  artifacts:
+    when: always
+    expire_in: 1 year
+    access: maintainer
+    paths:
+      - artifacts/production/verified-release.env
+      - artifacts/production/verified-manifest.yaml
+      - artifacts/production/verified-manifest.yaml.sha256
+      - reports/production-runtime.json
+  when: manual
+  allow_failure: false
+
+production_recovery:
+  extends:
+    - .production_delivery_job
+    - .production_pipeline_job
+  stage: deploy
+  timeout: 15 minutes
+  resource_group: production
+  environment:
+    name: production
+    url: $PUBLIC_BASE_URL
+    action: start
+  needs:
+    - job: production_resolve_provenance
+      artifacts: true
+    - job: production_preflight
+      artifacts: true
+  script:
+    - gitlab/scripts/production/recovery.sh
+  artifacts:
+    when: always
+    expire_in: 7 days
+    access: maintainer
+    paths:
+      - artifacts/production/recovery/reviewed-manifest.yaml
+      - artifacts/production/recovery/reviewed-manifest.yaml.sha256
+      - reports/production-recovery.json
+  when: manual
+  allow_failure: true
+
+production_recovery_runtime_verify:
+  extends:
+    - .production_delivery_job
+    - .production_pipeline_job
+  stage: verify
+  timeout: 15 minutes
+  resource_group: production
+  environment:
+    name: production
+    action: verify
+  needs:
+    - job: production_resolve_provenance
+      artifacts: true
+    - job: production_recovery
+      artifacts: true
+  script:
+    - gitlab/scripts/production/recovery-runtime-verify.sh
+  artifacts:
+    when: always
+    expire_in: 1 year
+    access: maintainer
+    paths:
+      - artifacts/production/verified-release.env
+      - artifacts/production/verified-manifest.yaml
+      - artifacts/production/verified-manifest.yaml.sha256
+      - reports/production-recovery-runtime.json
+  when: manual
+  allow_failure: true

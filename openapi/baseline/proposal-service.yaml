@@ -1,0 +1,416 @@
+openapi: 3.0.3
+info:
+  title: DevMenu Proposal Service API
+  version: 1.0.0
+  description: Public API contract for practice proposal and shared-history operations.
+servers:
+  - url: /
+security: []
+tags:
+  - name: Practice Proposals
+  - name: Technologies
+  - name: Shared Histories
+paths:
+  /api/v1/practice-proposals:
+    post:
+      tags: [Practice Proposals]
+      operationId: createPracticeProposals
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PracticeProposalRequest'
+      responses:
+        '200':
+          description: Practice proposals generated successfully.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PracticeProposalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/technologies:
+    get:
+      tags: [Technologies]
+      operationId: listTechnologies
+      responses:
+        '200':
+          description: Technologies with shared histories.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TechnologyListResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/technologies/{technologyId}/shared-histories:
+    get:
+      tags: [Shared Histories]
+      operationId: listTechnologySharedHistories
+      parameters:
+        - $ref: '#/components/parameters/TechnologyId'
+      responses:
+        '200':
+          description: Shared-history summaries for one technology.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TechnologyHistoryListResponse'
+        '400':
+          $ref: '#/components/responses/InvalidPathParameter'
+        '404':
+          $ref: '#/components/responses/TechnologyNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /api/v1/shared-histories/{historyId}:
+    get:
+      tags: [Shared Histories]
+      operationId: getSharedHistoryDetail
+      parameters:
+        - $ref: '#/components/parameters/HistoryId'
+      responses:
+        '200':
+          description: Complete shared-history detail.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedHistoryDetailResponse'
+        '400':
+          $ref: '#/components/responses/InvalidPathParameter'
+        '404':
+          $ref: '#/components/responses/SharedHistoryNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  headers:
+    RequestId:
+      description: Backend-generated UUID version 4 request identifier.
+      required: true
+      schema:
+        type: string
+        format: uuid
+        pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+    NoStore:
+      description: Prevents storage of API responses.
+      required: true
+      schema:
+        type: string
+        enum: [no-store]
+  parameters:
+    TechnologyId:
+      name: technologyId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/PublicId'
+    HistoryId:
+      name: historyId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/PublicId'
+  responses:
+    BadRequest:
+      description: Invalid JSON format or input validation failure.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/ErrorResponse'
+              - $ref: '#/components/schemas/ValidationErrorResponse'
+    InvalidPathParameter:
+      description: Invalid path parameter representation or range.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    UnsupportedMediaType:
+      description: Unsupported request media type.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    TechnologyNotFound:
+      description: The requested technology does not exist.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    SharedHistoryNotFound:
+      description: The requested shared history does not exist.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalError:
+      description: Generation, persistence, data-integrity, or internal failure.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+        Cache-Control:
+          $ref: '#/components/headers/NoStore'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    PublicId:
+      type: string
+      pattern: '^(?:[1-9][0-9]{0,17}|[1-8][0-9]{18}|9[01][0-9]{17}|92[01][0-9]{16}|922[0-2][0-9]{15}|9223[0-2][0-9]{14}|92233[0-6][0-9]{13}|922337[01][0-9]{12}|92233720[0-2][0-9]{10}|922337203[0-5][0-9]{9}|9223372036[0-7][0-9]{8}|92233720368[0-4][0-9]{7}|922337203685[0-3][0-9]{6}|9223372036854[0-6][0-9]{5}|92233720368547[0-6][0-9]{4}|922337203685477[0-4][0-9]{3}|9223372036854775[0-7][0-9]{2}|922337203685477580[0-7])$'
+      example: '20'
+    Difficulty:
+      type: string
+      enum: ['1', '2', '3']
+    Purpose:
+      type: string
+      enum: ['1', '2']
+    PracticeProposalRequest:
+      type: object
+      additionalProperties: true
+      required: [technologyName, difficulty, durationHours, purpose]
+      properties:
+        technologyName:
+          type: string
+          minLength: 1
+          maxLength: 20
+        difficulty:
+          $ref: '#/components/schemas/Difficulty'
+        durationHours:
+          type: integer
+          minimum: 1
+          maximum: 999
+        purpose:
+          $ref: '#/components/schemas/Purpose'
+        additionalPreference:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+    ProposalConditions:
+      type: object
+      additionalProperties: false
+      required: [technologyName, difficulty, durationHours, purpose, additionalPreference]
+      properties:
+        technologyName:
+          type: string
+          minLength: 1
+          maxLength: 20
+        difficulty:
+          $ref: '#/components/schemas/Difficulty'
+        durationHours:
+          type: integer
+          minimum: 1
+          maximum: 999
+        purpose:
+          $ref: '#/components/schemas/Purpose'
+        additionalPreference:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 200
+    PracticeProposal:
+      type: object
+      additionalProperties: false
+      required: [proposalNumber, title, overview, achievementGoal, practiceFocus]
+      properties:
+        proposalNumber:
+          type: integer
+          minimum: 1
+          maximum: 3
+        title:
+          type: string
+          minLength: 1
+          maxLength: 100
+        overview:
+          type: string
+          minLength: 1
+          maxLength: 500
+        achievementGoal:
+          type: string
+          minLength: 1
+          maxLength: 500
+        practiceFocus:
+          type: string
+          minLength: 1
+          maxLength: 500
+    PracticeProposalResponse:
+      type: object
+      additionalProperties: false
+      required: [conditions, practiceProposals]
+      properties:
+        conditions:
+          $ref: '#/components/schemas/ProposalConditions'
+        practiceProposals:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/PracticeProposal'
+    TechnologyListItem:
+      type: object
+      additionalProperties: false
+      required: [technologyId, technologyName]
+      properties:
+        technologyId:
+          $ref: '#/components/schemas/PublicId'
+        technologyName:
+          type: string
+          minLength: 1
+          maxLength: 20
+    TechnologyListResponse:
+      type: object
+      additionalProperties: false
+      required: [technologies]
+      properties:
+        technologies:
+          type: array
+          items:
+            $ref: '#/components/schemas/TechnologyListItem'
+    TechnologyHistorySummary:
+      type: object
+      additionalProperties: false
+      required: [historyId, createdAt, difficulty, durationHours, purpose]
+      properties:
+        historyId:
+          $ref: '#/components/schemas/PublicId'
+        createdAt:
+          type: string
+          format: date-time
+        difficulty:
+          $ref: '#/components/schemas/Difficulty'
+        durationHours:
+          type: integer
+          minimum: 1
+          maximum: 999
+        purpose:
+          $ref: '#/components/schemas/Purpose'
+    TechnologyHistoryListResponse:
+      type: object
+      additionalProperties: false
+      required: [technologyId, technologyName, sharedHistories]
+      properties:
+        technologyId:
+          $ref: '#/components/schemas/PublicId'
+        technologyName:
+          type: string
+          minLength: 1
+          maxLength: 20
+        sharedHistories:
+          type: array
+          items:
+            $ref: '#/components/schemas/TechnologyHistorySummary'
+    SharedHistoryDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [historyId, createdAt, conditions, practiceProposals]
+      properties:
+        historyId:
+          $ref: '#/components/schemas/PublicId'
+        createdAt:
+          type: string
+          format: date-time
+        conditions:
+          type: object
+          additionalProperties: false
+          required: [technologyId, technologyName, difficulty, durationHours, purpose, additionalPreference]
+          properties:
+            technologyId:
+              $ref: '#/components/schemas/PublicId'
+            technologyName:
+              type: string
+              minLength: 1
+              maxLength: 20
+            difficulty:
+              $ref: '#/components/schemas/Difficulty'
+            durationHours:
+              type: integer
+              minimum: 1
+              maximum: 999
+            purpose:
+              $ref: '#/components/schemas/Purpose'
+            additionalPreference:
+              type: string
+              nullable: true
+              minLength: 1
+              maxLength: 200
+        practiceProposals:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/PracticeProposal'
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [errorCode, errorMessage]
+      properties:
+        errorCode:
+          type: string
+          pattern: '^[A-Z]{2,3}[0-9]{3,4}$'
+        errorMessage:
+          type: string
+          minLength: 1
+    ValidationErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [errorCode, errorMessage, validationMessage]
+      properties:
+        errorCode:
+          type: string
+          pattern: '^[A-Z]{2,3}[0-9]{3,4}$'
+        errorMessage:
+          type: string
+          minLength: 1
+        validationMessage:
+          type: object
+          additionalProperties:
+            type: string
